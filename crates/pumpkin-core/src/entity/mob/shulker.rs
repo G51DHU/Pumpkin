@@ -9,12 +9,14 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::codec::var_int::VarInt;
 use pumpkin_protocol::java::client::play::CEntityPositionSync;
+use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 
 use rand::RngExt;
 
 use crate::entity::ai::behavior::hunting::{self, Hunt};
+use crate::entity::ai::goal::active_target::TargetCondition;
 use crate::entity::ai::goal::look_around::RandomLookAroundGoal;
 use crate::entity::ai::goal::look_at_entity::LookAtEntityGoal;
 use crate::entity::ai::goal::revenge::RevengeGoal;
@@ -50,7 +52,29 @@ impl BlockDirectionExt for BlockDirection {
     }
 }
 
-const SHULKER_HUNTS: &[Hunt] = &[Hunt::new(2, TargetMatch::Type(&EntityType::PLAYER), true)];
+/// Vanilla `ShulkerNearestAttackGoal` and `ShulkerDefenseAttackGoal`.
+const SHULKER_HUNTS: &[Hunt] = &[
+    Hunt::new(2, TargetMatch::Type(&EntityType::PLAYER), true)
+        .when(TargetCondition::NotPeaceful)
+        .within(attach_face_search_area),
+    Hunt::new(3, TargetMatch::Enemy, true)
+        .when(TargetCondition::OnTeam)
+        .within(attach_face_search_area),
+];
+
+/// Vanilla `getTargetSearchArea` of both shulker target goals: only 4 blocks out from the attach face.
+fn attach_face_search_area(mob: &dyn Mob, follow_distance: f64) -> BoundingBox {
+    let bounding_box = mob.get_entity().bounding_box.load();
+    let Some(shulker) = mob.as_shulker() else {
+        // Vanilla `NearestAttackableTargetGoal.getTargetSearchArea`.
+        return bounding_box.expand(follow_distance, follow_distance, follow_distance);
+    };
+    match shulker.get_attach_face().axis_of() {
+        Axis::X => bounding_box.expand(4.0, follow_distance, follow_distance),
+        Axis::Z => bounding_box.expand(follow_distance, follow_distance, 4.0),
+        Axis::Y => bounding_box.expand(follow_distance, 4.0, follow_distance),
+    }
+}
 
 pub struct ShulkerEntity {
     pub mob_entity: MobEntity,
@@ -99,7 +123,6 @@ impl ShulkerEntity {
                 ),
             );
             hunting::apply(target_selector, &mob_arc.mob_entity, SHULKER_HUNTS);
-            // TODO: search box flattened to 4 along the attach face; ShulkerDefenseAttackGoal at 3.
         };
 
         mob_arc
@@ -318,6 +341,10 @@ impl Mob for ShulkerEntity {
         if let Some(color) = nbt.get_byte("Color") {
             self.color.store(color as u8, Ordering::Relaxed);
         }
+    }
+
+    fn as_shulker(&self) -> Option<&ShulkerEntity> {
+        Some(self)
     }
 
     fn get_mob_entity(&self) -> &MobEntity {

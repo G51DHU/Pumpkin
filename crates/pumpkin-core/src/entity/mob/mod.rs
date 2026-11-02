@@ -1818,6 +1818,10 @@ pub trait Mob: EntityBase + Send + Sync {
         )
     }
 
+    fn as_shulker(&self) -> Option<&crate::entity::mob::shulker::ShulkerEntity> {
+        None
+    }
+
     fn as_iron_golem(&self) -> Option<&crate::entity::passive::iron_golem::IronGolemEntity> {
         None
     }

@@ -13,11 +13,16 @@ use crate::entity::{EntityBase, mob::MobEntity};
 use crate::plugin::api::events::entity::entity_target::TargetReason;
 use crate::world::World;
 use pumpkin_data::attributes::Attributes;
+use pumpkin_util::Difficulty;
+use pumpkin_util::math::boundingbox::BoundingBox;
 use rand::RngExt;
 use std::sync::Arc;
 use uuid::Uuid;
 
 const DEFAULT_RECIPROCAL_CHANCE: i32 = 10;
+
+/// Vanilla `NearestAttackableTargetGoal.getTargetSearchArea` override: hunter and follow distance.
+pub type SearchAreaFn = fn(&dyn Mob, f64) -> BoundingBox;
 
 /// Extra gate on top of the target predicate, for mobs that pick targets conditionally.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
@@ -32,6 +37,10 @@ pub enum TargetCondition {
     Adult,
     /// Only starts while the mob is untamed, and re-runs the search test to continue. (Wolves hunting prey)
     Untamed,
+    /// Only starts while the mob is on a scoreboard team. (Shulkers defending against monsters)
+    OnTeam,
+    /// Only starts outside Peaceful. (Shulkers hunting players)
+    NotPeaceful,
 }
 
 impl TargetCondition {
@@ -46,6 +55,10 @@ impl TargetCondition {
             // TODO: `Mob::is_baby()` once baby state is unified.
             Self::Adult => !mob.as_ageable().is_some_and(AgeableMob::is_baby),
             Self::Untamed => !mob.is_tamed(),
+            Self::OnTeam => mob.get_team_name().is_some(),
+            Self::NotPeaceful => {
+                mob.get_entity().world.load().level_info.load().difficulty != Difficulty::Peaceful
+            }
             Self::Always => true,
         }
     }
@@ -57,7 +70,12 @@ impl TargetCondition {
             Self::AngryAt => mob
                 .as_neutral()
                 .and_then(NeutralMob::get_persistent_anger_target),
-            Self::Always | Self::NoDaylight | Self::Adult | Self::Untamed => None,
+            Self::Always
+            | Self::NoDaylight
+            | Self::Adult
+            | Self::Untamed
+            | Self::OnTeam
+            | Self::NotPeaceful => None,
         }
     }
 
@@ -68,7 +86,12 @@ impl TargetCondition {
             Self::AngryAt => mob
                 .as_neutral()
                 .is_some_and(|neutral| neutral.is_angry_at(target, world)),
-            Self::Always | Self::NoDaylight | Self::Adult | Self::Untamed => true,
+            Self::Always
+            | Self::NoDaylight
+            | Self::Adult
+            | Self::Untamed
+            | Self::OnTeam
+            | Self::NotPeaceful => true,
         }
     }
 }
@@ -83,6 +106,7 @@ pub struct ActiveTargetGoal {
     gate: Option<MobFilter>,
     target_filter: Option<MobFilter>,
     selector: Option<TargetPredicateFn>,
+    search_area: Option<SearchAreaFn>,
 }
 
 impl ActiveTargetGoal {
@@ -117,6 +141,7 @@ impl ActiveTargetGoal {
             gate: None,
             target_filter: None,
             selector: None,
+            search_area: None,
         }
     }
 
@@ -170,6 +195,13 @@ impl ActiveTargetGoal {
         self
     }
 
+    /// Box searched for non-player candidates, in place of the follow range in every direction.
+    #[must_use]
+    pub fn searching_in(mut self: Box<Self>, search_area: SearchAreaFn) -> Box<Self> {
+        self.search_area = Some(search_area);
+        self
+    }
+
     fn passes_filter(&self, target: &dyn EntityBase) -> bool {
         self.target_filter
             .is_none_or(|filter| target.get_mob().is_some_and(filter))
@@ -197,6 +229,7 @@ impl ActiveTargetGoal {
             gate: None,
             target_filter: None,
             selector: None,
+            search_area: None,
         })
     }
 
@@ -225,7 +258,10 @@ impl ActiveTargetGoal {
 
         let entity = &mob_entity.living_entity.entity;
         let world = entity.world.load();
-        let area = SearchArea::from_eyes(entity, follow_range, follow_range).players_anywhere();
+        let mut area = SearchArea::from_eyes(entity, follow_range, follow_range).players_anywhere();
+        if let Some(search_area) = self.search_area {
+            area.area = search_area(mob, follow_range);
+        }
 
         // Pick the nearest candidate that passes the conditions, not the nearest overall.
         let target_type = self.target_type;
