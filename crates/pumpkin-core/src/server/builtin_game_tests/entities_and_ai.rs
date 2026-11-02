@@ -88,10 +88,15 @@ pub(super) async fn test_shulker_without_team_ignores_monsters(
 ) -> GameTestResult<()> {
     place_shulker_and_husk(&helper).await?;
 
-    helper.succeed_on_tick_when(100, move |helper| async move {
-        let matches = shulker_targets_husk(&helper).await;
-        helper.assert_true(matches == 0, "a shulker with no team targeted a monster")
-    })?;
+    // Give the defense goal 100 ticks to (wrongly) pick the husk, then check it did not.
+    helper
+        .start_sequence()
+        .then_idle(100)
+        .then_execute(|helper| async move {
+            let matches = shulker_targets_husk(&helper).await;
+            helper.assert_true(matches == 0, "a shulker with no team targeted a monster")
+        })
+        .then_succeed();
     Ok(())
 }
 
