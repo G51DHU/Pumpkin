@@ -34,6 +34,33 @@ pub(super) async fn test_item_entities_merge(helper: GameTestHelper) -> GameTest
     Ok(())
 }
 
+pub(super) async fn test_guardian_beam_kills_squid(helper: GameTestHelper) -> GameTestResult<()> {
+    for x in 0..5 {
+        for y in 0..5 {
+            for z in 0..8 {
+                let wall = x == 0 || x == 4 || y == 0 || z == 0 || z == 7;
+                let block = if wall { &Block::STONE } else { &Block::WATER };
+                helper
+                    .set_block_default(&BlockPos::new(x, y, z), block)
+                    .await?;
+            }
+        }
+    }
+
+    helper
+        .spawn_entity_at("minecraft:guardian", Vector3::new(2.5, 2.0, 1.5))
+        .await?;
+    helper
+        .spawn_entity_at("minecraft:squid", Vector3::new(2.5, 2.0, 6.5))
+        .await?;
+
+    helper.succeed_when(move |helper| async move {
+        helper.assert_entity_present("minecraft:guardian").await?;
+        helper.assert_entity_not_present("minecraft:squid").await
+    })?;
+    Ok(())
+}
+
 pub(super) async fn test_zombie_pathfinds_to_villager(
     helper: GameTestHelper,
 ) -> GameTestResult<()> {

@@ -12,8 +12,8 @@ use crate::entity::mob::guardian::GUARDIAN_HUNTS;
 use crate::entity::{
     Entity, EntityBase,
     ai::goal::{
-        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, swim::SwimGoal,
-        wander_around::WanderAroundGoal,
+        guardian_attack::GuardianAttackGoal, look_around::RandomLookAroundGoal,
+        look_at_entity::LookAtEntityGoal, swim::SwimGoal, wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity},
 };
@@ -25,6 +25,9 @@ pub struct ElderGuardianEntity {
 }
 
 impl ElderGuardianEntity {
+    /// Vanilla `ElderGuardian.getAttackDuration`.
+    pub const ATTACK_DURATION: i32 = 60;
+
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
         let guardian = Self { mob_entity };
@@ -38,12 +41,16 @@ impl ElderGuardianEntity {
             let goal_selector = &mob_arc.mob_entity.goals_selector;
 
             goal_selector.add_goal(0, Box::new(SwimGoal::default()));
-            goal_selector.add_goal(4, Box::new(WanderAroundGoal::new(1.0)));
             goal_selector.add_goal(
-                5,
+                4,
+                Box::new(GuardianAttackGoal::new(Self::ATTACK_DURATION, true)),
+            );
+            goal_selector.add_goal(7, Box::new(WanderAroundGoal::new(1.0)));
+            goal_selector.add_goal(
+                8,
                 LookAtEntityGoal::with_default(mob_weak.clone(), &EntityType::PLAYER, 8.0),
             );
-            goal_selector.add_goal(6, Box::new(RandomLookAroundGoal::default()));
+            goal_selector.add_goal(9, Box::new(RandomLookAroundGoal::default()));
 
             let target_selector = &mob_arc.mob_entity.target_selector;
             hunting::apply(target_selector, &mob_arc.mob_entity, GUARDIAN_HUNTS);
