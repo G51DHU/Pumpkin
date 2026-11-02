@@ -197,6 +197,8 @@ pub struct MobEquipmentDef {
     pub entity_type: &'static str,
     /// Main-hand weapon configuration.
     pub weapon: WeaponConfig,
+    /// Drop chance of the main-hand weapon (vanilla `setDropChance`).
+    pub weapon_drop_chance: f32,
     /// Armor configuration.
     pub armor: ArmorConfig,
     /// Whether spawn-time enchantments can be applied.
@@ -300,6 +302,7 @@ pub static EQUIPMENT_REGISTRY: LazyLock<HashMap<&'static str, MobEquipmentDef>> 
                     otherwise: 0.01,
                     items: &ZOMBIE_WEAPONS,
                 },
+                weapon_drop_chance: DEFAULT_EQUIPMENT_DROP_CHANCE,
                 armor: ArmorConfig::Vanilla,
                 enchanted: true,
                 can_pick_up_loot: true,
@@ -316,6 +319,7 @@ pub static EQUIPMENT_REGISTRY: LazyLock<HashMap<&'static str, MobEquipmentDef>> 
                     otherwise: 0.01,
                     items: &ZOMBIE_WEAPONS,
                 },
+                weapon_drop_chance: DEFAULT_EQUIPMENT_DROP_CHANCE,
                 armor: ArmorConfig::Vanilla,
                 enchanted: true,
                 can_pick_up_loot: true,
@@ -332,6 +336,7 @@ pub static EQUIPMENT_REGISTRY: LazyLock<HashMap<&'static str, MobEquipmentDef>> 
                     otherwise: 0.01,
                     items: &ZOMBIE_WEAPONS,
                 },
+                weapon_drop_chance: DEFAULT_EQUIPMENT_DROP_CHANCE,
                 armor: ArmorConfig::Vanilla,
                 enchanted: true,
                 can_pick_up_loot: true,
@@ -348,6 +353,7 @@ pub static EQUIPMENT_REGISTRY: LazyLock<HashMap<&'static str, MobEquipmentDef>> 
                     otherwise: 0.10,
                     items: &DROWNED_WEAPONS,
                 },
+                weapon_drop_chance: DEFAULT_EQUIPMENT_DROP_CHANCE,
                 armor: ArmorConfig::None,
                 enchanted: true,
                 can_pick_up_loot: true,
@@ -360,6 +366,7 @@ pub static EQUIPMENT_REGISTRY: LazyLock<HashMap<&'static str, MobEquipmentDef>> 
             MobEquipmentDef {
                 entity_type: "zombified_piglin",
                 weapon: WeaponConfig::AlwaysWeighted(&ZOMBIFIED_PIGLIN_WEAPONS),
+                weapon_drop_chance: DEFAULT_EQUIPMENT_DROP_CHANCE,
                 armor: ArmorConfig::None,
                 enchanted: true,
                 can_pick_up_loot: false,
@@ -372,6 +379,7 @@ pub static EQUIPMENT_REGISTRY: LazyLock<HashMap<&'static str, MobEquipmentDef>> 
             MobEquipmentDef {
                 entity_type: "skeleton",
                 weapon: WeaponConfig::Always(&Item::BOW),
+                weapon_drop_chance: DEFAULT_EQUIPMENT_DROP_CHANCE,
                 armor: ArmorConfig::Vanilla,
                 enchanted: true,
                 can_pick_up_loot: true,
@@ -384,6 +392,7 @@ pub static EQUIPMENT_REGISTRY: LazyLock<HashMap<&'static str, MobEquipmentDef>> 
             MobEquipmentDef {
                 entity_type: "stray",
                 weapon: WeaponConfig::Always(&Item::BOW),
+                weapon_drop_chance: DEFAULT_EQUIPMENT_DROP_CHANCE,
                 armor: ArmorConfig::Vanilla,
                 enchanted: true,
                 can_pick_up_loot: true,
@@ -396,6 +405,7 @@ pub static EQUIPMENT_REGISTRY: LazyLock<HashMap<&'static str, MobEquipmentDef>> 
             MobEquipmentDef {
                 entity_type: "bogged",
                 weapon: WeaponConfig::Always(&Item::BOW),
+                weapon_drop_chance: DEFAULT_EQUIPMENT_DROP_CHANCE,
                 armor: ArmorConfig::Vanilla,
                 enchanted: true,
                 can_pick_up_loot: true,
@@ -408,6 +418,7 @@ pub static EQUIPMENT_REGISTRY: LazyLock<HashMap<&'static str, MobEquipmentDef>> 
             MobEquipmentDef {
                 entity_type: "wither_skeleton",
                 weapon: WeaponConfig::Always(&Item::STONE_SWORD),
+                weapon_drop_chance: DEFAULT_EQUIPMENT_DROP_CHANCE,
                 armor: ArmorConfig::None,
                 enchanted: false,
                 can_pick_up_loot: false,
@@ -420,6 +431,7 @@ pub static EQUIPMENT_REGISTRY: LazyLock<HashMap<&'static str, MobEquipmentDef>> 
             MobEquipmentDef {
                 entity_type: "piglin",
                 weapon: WeaponConfig::AlwaysWeighted(&PIGLIN_WEAPONS),
+                weapon_drop_chance: DEFAULT_EQUIPMENT_DROP_CHANCE,
                 armor: ArmorConfig::CustomPerSlot(&PIGLIN_ARMOR),
                 enchanted: true,
                 can_pick_up_loot: false,
@@ -432,6 +444,7 @@ pub static EQUIPMENT_REGISTRY: LazyLock<HashMap<&'static str, MobEquipmentDef>> 
             MobEquipmentDef {
                 entity_type: "pillager",
                 weapon: WeaponConfig::Always(&Item::CROSSBOW),
+                weapon_drop_chance: DEFAULT_EQUIPMENT_DROP_CHANCE,
                 armor: ArmorConfig::None,
                 enchanted: false,
                 can_pick_up_loot: false,
@@ -444,6 +457,20 @@ pub static EQUIPMENT_REGISTRY: LazyLock<HashMap<&'static str, MobEquipmentDef>> 
             MobEquipmentDef {
                 entity_type: "vindicator",
                 weapon: WeaponConfig::Always(&Item::IRON_AXE),
+                weapon_drop_chance: DEFAULT_EQUIPMENT_DROP_CHANCE,
+                armor: ArmorConfig::None,
+                enchanted: true,
+                can_pick_up_loot: false,
+            },
+        );
+
+        // ─── Vex ───
+        m.insert(
+            "vex",
+            MobEquipmentDef {
+                entity_type: "vex",
+                weapon: WeaponConfig::Always(&Item::IRON_SWORD),
+                weapon_drop_chance: 0.0,
                 armor: ArmorConfig::None,
                 enchanted: true,
                 can_pick_up_loot: false,
@@ -715,11 +742,7 @@ fn equip_mob_from_def(
                     difficulty.special_multiplier,
                 );
             }
-            changes.push((
-                EquipmentSlot::MAIN_HAND,
-                stack,
-                DEFAULT_EQUIPMENT_DROP_CHANCE,
-            ));
+            changes.push((EquipmentSlot::MAIN_HAND, stack, def.weapon_drop_chance));
         }
         WeaponConfig::AlwaysWeighted(items) => {
             let item = weighted_select_item(items);
@@ -731,11 +754,7 @@ fn equip_mob_from_def(
                     difficulty.special_multiplier,
                 );
             }
-            changes.push((
-                EquipmentSlot::MAIN_HAND,
-                stack,
-                DEFAULT_EQUIPMENT_DROP_CHANCE,
-            ));
+            changes.push((EquipmentSlot::MAIN_HAND, stack, def.weapon_drop_chance));
         }
         WeaponConfig::Chance {
             on_hard,
@@ -757,11 +776,7 @@ fn equip_mob_from_def(
                         difficulty.special_multiplier,
                     );
                 }
-                changes.push((
-                    EquipmentSlot::MAIN_HAND,
-                    stack,
-                    DEFAULT_EQUIPMENT_DROP_CHANCE,
-                ));
+                changes.push((EquipmentSlot::MAIN_HAND, stack, def.weapon_drop_chance));
             }
         }
         WeaponConfig::None => {}
