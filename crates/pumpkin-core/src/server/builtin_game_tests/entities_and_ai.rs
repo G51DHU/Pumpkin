@@ -34,6 +34,30 @@ pub(super) async fn test_item_entities_merge(helper: GameTestHelper) -> GameTest
     Ok(())
 }
 
+pub(super) async fn test_vex_flies_through_walls(helper: GameTestHelper) -> GameTestResult<()> {
+    for x in 0..5 {
+        for y in 0..5 {
+            for z in 0..5 {
+                let wall = x == 0 || x == 4 || y == 0 || y == 4 || z == 0 || z == 4;
+                if wall {
+                    helper
+                        .set_block_default(&BlockPos::new(x, y, z), &Block::STONE)
+                        .await?;
+                }
+            }
+        }
+    }
+
+    helper
+        .spawn_entity_at("minecraft:vex", Vector3::new(2.5, 2.0, 2.5))
+        .await?;
+
+    helper.succeed_when(move |helper| async move {
+        helper.assert_entity_not_present("minecraft:vex").await
+    })?;
+    Ok(())
+}
+
 pub(super) async fn test_zombie_pathfinds_to_villager(
     helper: GameTestHelper,
 ) -> GameTestResult<()> {

@@ -7,6 +7,7 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::sound::Sound;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::vector3::Vector3;
+use rand::RngExt;
 
 use crate::entity::ai::behavior::fleeing::{self, Flee};
 use crate::entity::ai::behavior::hunting::{self, Hunt};
@@ -24,9 +25,9 @@ use crate::entity::{
             self, ObtainRaidLeaderBannerGoal, PathfindToRaidGoal, Raider, RaiderCelebrationGoal,
             RaiderData, RaiderMoveThroughVillageGoal,
         },
+        vex::VexEntity,
     },
     projectile::evoker_fangs::EvokerFangsEntity,
-    r#type::from_type,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -469,19 +470,26 @@ impl Goal for EvokerSummonSpellGoal {
             let evoker_ent = &evoker.mob_entity.living_entity.entity;
             evoker_ent.play_sound(Sound::EntityEvokerCastSpell);
 
-            let world = evoker_ent.world.load();
-            let evoker_pos = evoker_ent.pos.load();
+            let world = evoker_ent.world.load_full();
+            let evoker_block_pos = evoker_ent.block_pos.load();
+            let mut random = evoker.get_random();
 
             for _ in 0..3 {
-                let offset_x = (rand::random::<i32>() % 5 - 2) as f64;
-                let offset_z = (rand::random::<i32>() % 5 - 2) as f64;
-                let spawn_pos = Vector3::new(
-                    evoker_pos.x + offset_x,
-                    evoker_pos.y + 1.0,
-                    evoker_pos.z + offset_z,
-                );
-
-                let vex = from_type(&EntityType::VEX, spawn_pos, &world, Uuid::new_v4());
+                let pos = evoker_block_pos.offset(Vector3::new(
+                    -2 + random.random_range(0..5),
+                    1,
+                    -2 + random.random_range(0..5),
+                ));
+                let vex = VexEntity::new(Entity::from_uuid(
+                    Uuid::new_v4(),
+                    world.clone(),
+                    pos.to_f64(),
+                    &EntityType::VEX,
+                ));
+                vex.finalize_spawn(&world, None);
+                vex.set_owner(evoker_ent.entity_uuid);
+                vex.set_bound_origin(Some(pos));
+                vex.set_limited_life(20 * (30 + random.random_range(0..90)));
                 world.spawn_entity(vex);
             }
         }
