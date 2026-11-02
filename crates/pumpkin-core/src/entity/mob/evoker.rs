@@ -457,7 +457,7 @@ impl EvokerAttackSpellGoal {
                 );
             }
         } else {
-            for i in 0..16_u32 {
+            for i in 0..16u32 {
                 let reach = 1.25 * f64::from(i + 1);
                 Self::create_spell_entity(
                     evoker,
