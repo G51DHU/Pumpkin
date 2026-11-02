@@ -46,7 +46,16 @@ async fn place_shulker_and_husk(helper: &GameTestHelper) -> GameTestResult<()> {
     Ok(())
 }
 
-const SHULKER_TARGETS_HUSK: &str = "execute as @e[type=minecraft:shulker,limit=1,sort=nearest] on target if entity @s[type=minecraft:husk]";
+/// How many husks the shulker is targeting. A failed `execute if` counts as none.
+async fn shulker_targets_husk(helper: &GameTestHelper) -> u32 {
+    helper
+        .execute_command(
+            &BlockPos::new(1, 1, 2),
+            "execute as @e[type=minecraft:shulker,limit=1,sort=nearest] on target if entity @s[type=minecraft:husk]",
+        )
+        .await
+        .unwrap_or(0)
+}
 
 pub(super) async fn test_shulker_on_team_targets_monsters(
     helper: GameTestHelper,
@@ -65,10 +74,11 @@ pub(super) async fn test_shulker_on_team_targets_monsters(
         .await?;
 
     helper.succeed_when(move |helper| async move {
-        helper
-            .execute_command(&BlockPos::new(1, 1, 2), SHULKER_TARGETS_HUSK)
-            .await
-            .map(|_| ())
+        let matches = shulker_targets_husk(&helper).await;
+        helper.assert_true(
+            matches > 0,
+            "the shulker on a team is not targeting the husk",
+        )
     })?;
     Ok(())
 }
@@ -79,11 +89,8 @@ pub(super) async fn test_shulker_without_team_ignores_monsters(
     place_shulker_and_husk(&helper).await?;
 
     helper.succeed_on_tick_when(100, move |helper| async move {
-        let targeting = helper
-            .execute_command(&BlockPos::new(1, 1, 2), SHULKER_TARGETS_HUSK)
-            .await
-            .is_ok();
-        helper.assert_false(targeting, "a shulker with no team targeted a monster")
+        let matches = shulker_targets_husk(&helper).await;
+        helper.assert_true(matches == 0, "a shulker with no team targeted a monster")
     })?;
     Ok(())
 }
