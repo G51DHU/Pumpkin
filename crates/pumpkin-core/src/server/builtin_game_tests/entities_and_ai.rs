@@ -34,6 +34,37 @@ pub(super) async fn test_item_entities_merge(helper: GameTestHelper) -> GameTest
     Ok(())
 }
 
+/// The villager stands on a raised step, so fangs aimed at it have to find the step's top.
+pub(super) async fn test_evoker_fangs_land_on_raised_ground(
+    helper: GameTestHelper,
+) -> GameTestResult<()> {
+    build_stone_floor(&helper, 8, 5).await?;
+    for x in 4..8 {
+        for z in 0..5 {
+            helper
+                .set_block_default(&BlockPos::new(x, 1, z), &Block::STONE)
+                .await?;
+        }
+    }
+    helper
+        .spawn_entity_at("minecraft:evoker", Vector3::new(0.5, 1.0, 2.5))
+        .await?;
+    helper
+        .spawn_entity_at("minecraft:villager", Vector3::new(6.5, 2.0, 2.5))
+        .await?;
+
+    helper.succeed_when(move |helper| async move {
+        helper
+            .assert_entity_present_in_box(
+                "minecraft:evoker_fangs",
+                BlockPos::new(4, 2, 0),
+                BlockPos::new(7, 3, 4),
+            )
+            .await
+    })?;
+    Ok(())
+}
+
 pub(super) async fn test_zombie_pathfinds_to_villager(
     helper: GameTestHelper,
 ) -> GameTestResult<()> {
