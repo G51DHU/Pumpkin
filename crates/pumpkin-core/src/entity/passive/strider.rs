@@ -1,7 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
-use pumpkin_data::BlockState;
 use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::fluid::Fluid;
@@ -9,19 +8,28 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::tag::{self, Taggable};
+use pumpkin_data::{Block, BlockState};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 
+use crate::block::PathComputationType;
 use crate::entity::{
     Entity, EntityBase,
     ageable::{AgeableData, AgeableMob},
     ai::goal::{
-        breed::BreedGoal, escape_danger::EscapeDangerGoal, follow_parent::FollowParentGoal,
-        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, tempt::TemptGoal,
+        Controls, Goal, ParentHandle,
+        breed::BreedGoal,
+        escape_danger::EscapeDangerGoal,
+        follow_parent::FollowParentGoal,
+        look_around::RandomLookAroundGoal,
+        look_at_entity::LookAtEntityGoal,
+        move_to_target_pos::{MoveToTargetPos, MoveToTargetPosGoal},
+        tempt::TemptGoal,
         wander_around::WanderAroundGoal,
     },
+    ai::pathfinder::{Navigator, node::PathType},
     item_steerable::{ItemBasedSteering, ItemSteerable},
     mob::{Mob, MobEntity, equipment::equip_on_target},
     passive::animal::Animal,
@@ -58,19 +66,36 @@ impl StriderEntity {
             Arc::downgrade(&mob_arc)
         };
 
+        let mut navigator = mob_arc
+            .mob_entity
+            .navigator
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *navigator = Navigator::strider();
+        navigator.set_pathfinding_malus(PathType::Water, -1.0);
+        navigator.set_pathfinding_malus(PathType::Lava, 0.0);
+        navigator.set_pathfinding_malus(PathType::DangerFire, 0.0);
+        navigator.set_pathfinding_malus(PathType::DamageFire, 0.0);
+        drop(navigator);
+
         {
             let goal_selector = &mob_arc.mob_entity.goals_selector;
 
             goal_selector.add_goal(1, EscapeDangerGoal::new(1.65));
             goal_selector.add_goal(2, BreedGoal::new(1.0));
             goal_selector.add_goal(3, Box::new(TemptGoal::new(1.4, TEMPT_ITEMS, false)));
-            goal_selector.add_goal(4, Box::new(FollowParentGoal::new(1.1)));
-            goal_selector.add_goal(5, Box::new(WanderAroundGoal::new(1.0)));
+            goal_selector.add_goal(4, StriderGoToLavaGoal::new(1.0));
+            goal_selector.add_goal(5, Box::new(FollowParentGoal::new(1.0)));
+            goal_selector.add_goal(7, Box::new(WanderAroundGoal::with_interval(1.0, 60)));
             goal_selector.add_goal(
-                6,
-                LookAtEntityGoal::with_default(mob_weak, &EntityType::PLAYER, 6.0),
+                8,
+                LookAtEntityGoal::with_default(mob_weak.clone(), &EntityType::PLAYER, 8.0),
             );
-            goal_selector.add_goal(7, Box::new(RandomLookAroundGoal::default()));
+            goal_selector.add_goal(8, Box::new(RandomLookAroundGoal::default()));
+            goal_selector.add_goal(
+                9,
+                LookAtEntityGoal::with_default(mob_weak, &EntityType::STRIDER, 8.0),
+            );
         };
 
         mob_arc
@@ -114,8 +139,77 @@ impl StriderEntity {
     }
 }
 
+/// Vanilla `Strider.StriderGoToLavaGoal`: walk back onto lava when off it.
+pub struct StriderGoToLavaGoal {
+    goal: MoveToTargetPosGoal<Self>,
+}
+
+impl StriderGoToLavaGoal {
+    #[must_use]
+    pub fn new(speed: f64) -> Box<Self> {
+        let mut this = Box::new(Self {
+            goal: MoveToTargetPosGoal::new(ParentHandle::none(), speed, 8, 2),
+        });
+        // SAFETY: `this` heap allocation address is pinned in Box and outlives `ParentHandle` references.
+        this.goal.move_to_target_pos = unsafe { ParentHandle::new(&this) };
+        this
+    }
+}
+
 fn is_in_lava(mob: &dyn Mob) -> bool {
     mob.get_entity().touching_lava.load(Ordering::Relaxed)
+}
+
+impl Goal for StriderGoToLavaGoal {
+    fn can_start(&mut self, mob: &dyn Mob) -> bool {
+        !is_in_lava(mob) && self.goal.can_start(mob)
+    }
+
+    fn should_continue(&mut self, mob: &dyn Mob) -> bool {
+        let world = mob.get_entity().world.load_full();
+        !is_in_lava(mob) && self.is_target_pos(world, self.goal.target_pos)
+    }
+
+    fn start(&mut self, mob: &dyn Mob) {
+        self.goal.start(mob);
+    }
+
+    fn stop(&mut self, mob: &dyn Mob) {
+        self.goal.stop(mob);
+    }
+
+    fn tick(&mut self, mob: &dyn Mob) {
+        self.goal.tick(mob);
+    }
+
+    fn should_run_every_tick(&self) -> bool {
+        self.goal.should_run_every_tick()
+    }
+
+    fn controls(&self) -> Controls {
+        self.goal.controls()
+    }
+}
+
+impl MoveToTargetPos for StriderGoToLavaGoal {
+    fn is_target_pos(&self, world: Arc<crate::world::World>, block_pos: BlockPos) -> bool {
+        if world.get_block(&block_pos) != &Block::LAVA {
+            return false;
+        }
+        let above = block_pos.up();
+        let (block, state) = world.get_block_and_state(&above);
+        world
+            .block_registry
+            .is_pathfindable(block, state, PathComputationType::Land)
+    }
+
+    fn get_move_to_target(&self, target_pos: BlockPos) -> BlockPos {
+        target_pos
+    }
+
+    fn should_recalculate_path(&self, trying_time: i32) -> bool {
+        trying_time % 20 == 0
+    }
 }
 
 impl AgeableMob for StriderEntity {
@@ -155,6 +249,22 @@ impl Mob for StriderEntity {
             return false;
         }
         true
+    }
+
+    fn get_walk_target_value(&self, pos: &BlockPos) -> f32 {
+        let entity = self.get_entity();
+        if entity
+            .world
+            .load()
+            .get_fluid(pos)
+            .has_tag(&tag::Fluid::MINECRAFT_LAVA)
+        {
+            10.0
+        } else if is_in_lava(self) {
+            f32::NEG_INFINITY
+        } else {
+            0.0
+        }
     }
 
     fn can_dispenser_equip_into_slot(&self, slot: &EquipmentSlot) -> bool {

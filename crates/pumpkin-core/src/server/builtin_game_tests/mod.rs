@@ -78,6 +78,7 @@ const BUILTIN_TEST_IDS: &[&str] = &[
     "pumpkin:wither_pattern_spawns",
     "pumpkin:item_entities_merge",
     "pumpkin:strider_stands_on_lava",
+    "pumpkin:strider_goes_to_lava",
     "pumpkin:zombie_pathfinds_to_villager",
     // redstone_wire_and_power (14)
     "pumpkin:redstone_wire_attenuation_1_to_4",
@@ -515,6 +516,13 @@ pub fn ensure_builtin_game_tests_registered() {
             100,
             0,
             entities_and_ai::test_strider_stands_on_lava,
+        );
+        register_function_test(
+            "pumpkin:strider_goes_to_lava",
+            "pumpkin:empty_8x4x5",
+            400,
+            0,
+            entities_and_ai::test_strider_goes_to_lava,
         );
         register_flaky_function_test(
             "pumpkin:zombie_pathfinds_to_villager",

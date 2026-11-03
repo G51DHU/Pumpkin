@@ -1086,6 +1086,8 @@ impl PathNavigation {
 
 pub struct GroundPathNavigation {
     pub inner: PathNavigation,
+    /// Vanilla `Strider.StriderPathNavigation`: lava counts as a stable destination.
+    stable_on_lava: bool,
 }
 
 impl Default for GroundPathNavigation {
@@ -1099,6 +1101,16 @@ impl GroundPathNavigation {
     pub fn new() -> Self {
         Self {
             inner: PathNavigation::new(EvaluatorKind::Walk(WalkNodeEvaluator::default())),
+            stable_on_lava: false,
+        }
+    }
+
+    /// Vanilla `Strider.StriderPathNavigation`.
+    #[must_use]
+    pub fn strider() -> Self {
+        Self {
+            stable_on_lava: true,
+            ..Self::new()
         }
     }
 }
@@ -1106,6 +1118,11 @@ impl GroundPathNavigation {
 impl PathNavigationTrait for GroundPathNavigation {
     fn set_progress(&mut self, goal: NavigatorGoal) {
         self.inner.set_progress(goal);
+    }
+
+    fn is_stable_destination(&self, world: &World, pos: &BlockPos) -> bool {
+        (self.stable_on_lava && world.get_block(pos) == &pumpkin_data::Block::LAVA)
+            || world.get_block_state(&pos.down()).is_solid_render()
     }
 
     fn set_speed(&mut self, speed: f64) {
@@ -2391,6 +2408,11 @@ impl Navigator {
     #[must_use]
     pub fn water_bound(allow_breaching: bool) -> Self {
         Self::new(WaterBoundPathNavigation::new(allow_breaching))
+    }
+
+    #[must_use]
+    pub fn strider() -> Self {
+        Self::new(GroundPathNavigation::strider())
     }
 
     #[must_use]

@@ -77,6 +77,34 @@ pub(super) async fn test_strider_stands_on_lava(helper: GameTestHelper) -> GameT
     Ok(())
 }
 
+/// A strider on stone walks onto the lava next to it.
+pub(super) async fn test_strider_goes_to_lava(helper: GameTestHelper) -> GameTestResult<()> {
+    build_stone_floor(&helper, 8, 5).await?;
+    for x in 0..8 {
+        for z in 0..5 {
+            let block = if x < 4 { &Block::STONE } else { &Block::LAVA };
+            helper
+                .set_block_default(&BlockPos::new(x, 1, z), block)
+                .await?;
+        }
+    }
+    helper
+        .spawn_entity_at("minecraft:strider", Vector3::new(1.5, 2.0, 2.5))
+        .await?;
+
+    helper.succeed_when(|helper| async move {
+        let on_lava = helper
+            .execute_command(
+                &BlockPos::new(4, 1, 0),
+                "execute if entity @e[type=minecraft:strider,dx=3,dy=0,dz=4]",
+            )
+            .await
+            .unwrap_or(0);
+        helper.assert_true(on_lava > 0, "the strider did not walk onto the lava")
+    })?;
+    Ok(())
+}
+
 pub(super) async fn test_zombie_pathfinds_to_villager(
     helper: GameTestHelper,
 ) -> GameTestResult<()> {
