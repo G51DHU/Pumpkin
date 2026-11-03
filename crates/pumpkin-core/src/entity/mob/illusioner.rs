@@ -9,10 +9,7 @@ use crate::entity::ai::behavior::hunting::{self, Hunt};
 use crate::entity::ai::target_match::TargetMatch;
 use crate::entity::{
     Entity,
-    ai::goal::{
-        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, swim::SwimGoal,
-        wander_around::WanderAroundGoal,
-    },
+    ai::goal::{look_at_entity::LookAtEntityGoal, swim::SwimGoal, wander_around::WanderAroundGoal},
     mob::{
         Mob, MobEntity,
         patrol::{LongDistancePatrolGoal, PatrolData, PatrollingMonster},
@@ -63,10 +60,16 @@ impl IllusionerEntity {
             goal_selector.add_goal(5, Box::new(RaiderCelebrationGoal));
             goal_selector.add_goal(5, Box::new(WanderAroundGoal::new(1.0)));
             goal_selector.add_goal(
-                6,
-                LookAtEntityGoal::with_default(mob_weak, &EntityType::PLAYER, 8.0),
+                9,
+                Box::new(LookAtEntityGoal::new(
+                    mob_weak.clone(),
+                    &EntityType::PLAYER,
+                    3.0,
+                    1.0,
+                    false,
+                )),
             );
-            goal_selector.add_goal(7, Box::new(RandomLookAroundGoal::default()));
+            goal_selector.add_goal(10, LookAtEntityGoal::at_any_mob(mob_weak, 8.0));
 
             let target_selector = &mob_arc.mob_entity.target_selector;
             target_selector.add_goal(1, raider::revenge_goal());

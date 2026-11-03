@@ -14,8 +14,8 @@ use crate::entity::ai::target_match::TargetMatch;
 use crate::entity::{
     Entity, EntityBase,
     ai::goal::{
-        Controls, Goal, look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal,
-        swim::SwimGoal, wander_around::WanderAroundGoal,
+        Controls, Goal, look_at_entity::LookAtEntityGoal, swim::SwimGoal,
+        wander_around::WanderAroundGoal,
     },
     mob::{
         Mob, MobEntity,
@@ -106,9 +106,15 @@ impl EvokerEntity {
             goal_selector.add_goal(8, Box::new(WanderAroundGoal::new(0.6)));
             goal_selector.add_goal(
                 9,
-                LookAtEntityGoal::with_default(mob_interface_weak, &EntityType::PLAYER, 3.0),
+                Box::new(LookAtEntityGoal::new(
+                    mob_interface_weak.clone(),
+                    &EntityType::PLAYER,
+                    3.0,
+                    1.0,
+                    false,
+                )),
             );
-            goal_selector.add_goal(10, Box::new(RandomLookAroundGoal::default()));
+            goal_selector.add_goal(10, LookAtEntityGoal::at_any_mob(mob_interface_weak, 8.0));
 
             let target_selector = &mob_arc.mob_entity.target_selector;
             target_selector.add_goal(1, raider::revenge_goal());

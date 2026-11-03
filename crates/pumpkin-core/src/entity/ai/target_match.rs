@@ -23,6 +23,9 @@ pub enum TargetMatch {
     /// Vanilla `Monster.class`: an [`Self::Enemy`] that is not a slime, ghast, phantom,
     /// shulker, hoglin or the dragon.
     Monster,
+    /// Vanilla `Mob.class`: every type but players, armor stands, mannequins and non-living
+    /// entities.
+    Mob,
 }
 
 /// Monster category, but not vanilla `Enemy`.
@@ -59,6 +62,7 @@ impl TargetMatch {
             Self::AllExcept(tag) => !entity_type.has_tag(tag),
             Self::Enemy => is_enemy(entity_type),
             Self::Monster => is_enemy(entity_type) && !ENEMY_NOT_MONSTER.contains(&entity_type),
+            Self::Mob => entity_type.mob,
         }
     }
 
@@ -223,5 +227,41 @@ impl TargetMatch {
 impl From<&'static EntityType> for TargetMatch {
     fn from(entity_type: &'static EntityType) -> Self {
         Self::Type(entity_type)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TargetMatch;
+    use pumpkin_data::entity::EntityType;
+
+    #[test]
+    fn mob_matches_vanilla_mob_class() {
+        for mob in [
+            &EntityType::ZOMBIE,
+            &EntityType::VILLAGER,
+            &EntityType::BAT,
+            &EntityType::IRON_GOLEM,
+            &EntityType::ENDER_DRAGON,
+        ] {
+            assert!(
+                TargetMatch::Mob.matches(mob),
+                "{} is a Mob",
+                mob.resource_name
+            );
+        }
+        for not_mob in [
+            &EntityType::PLAYER,
+            &EntityType::ARMOR_STAND,
+            &EntityType::MANNEQUIN,
+            &EntityType::ITEM,
+        ] {
+            assert!(
+                !TargetMatch::Mob.matches(not_mob),
+                "{} is not a Mob",
+                not_mob.resource_name
+            );
+        }
+        assert!(!TargetMatch::Mob.is_player());
     }
 }
