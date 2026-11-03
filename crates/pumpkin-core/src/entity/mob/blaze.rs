@@ -7,12 +7,13 @@ use pumpkin_util::math::vector3::Vector3;
 
 use crate::entity::ai::behavior::hunting::{self, Hunt};
 use crate::entity::ai::goal::revenge::RevengeGoal;
+use crate::entity::ai::pathfinder::node::PathType;
 use crate::entity::ai::target_match::TargetMatch;
 use crate::entity::{
     Entity, EntityBase,
     ai::goal::{
-        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, swim::SwimGoal,
-        wander_around::WanderAroundGoal,
+        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal,
+        move_towards_restriction::MoveTowardsRestrictionGoal, wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity},
 };
@@ -36,11 +37,19 @@ impl BlazeEntity {
             let mob_arc: Arc<dyn Mob> = mob_arc.clone();
             Arc::downgrade(&mob_arc)
         };
+        let mut navigator = mob_arc
+            .entity
+            .navigator
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        navigator.set_pathfinding_malus(PathType::Water, -1.0);
+        navigator.set_pathfinding_malus(PathType::Lava, 8.0);
+        navigator.set_pathfinding_malus(PathType::DangerFire, 0.0);
+        navigator.set_pathfinding_malus(PathType::DamageFire, 0.0);
+        drop(navigator);
         {
             let goal_selector = &mob_arc.entity.goals_selector;
             let target_selector = &mob_arc.entity.target_selector;
-
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
 
             goal_selector.add_goal(
                 4,
@@ -51,7 +60,11 @@ impl BlazeEntity {
                 ),
             );
 
-            goal_selector.add_goal(5, Box::new(WanderAroundGoal::new(1.0)));
+            goal_selector.add_goal(5, Box::new(MoveTowardsRestrictionGoal::new(1.0)));
+            goal_selector.add_goal(
+                7,
+                Box::new(WanderAroundGoal::water_avoiding_with_probability(1.0, 0.0)),
+            );
             goal_selector.add_goal(
                 8,
                 LookAtEntityGoal::with_default(mob_weak, &EntityType::PLAYER, 8.0),
