@@ -1,5 +1,7 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Weak};
+
+use crossbeam::atomic::AtomicCell;
 
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::entity::EntityType;
@@ -9,6 +11,7 @@ use crate::entity::ai::behavior::hunting::{self, Hunt};
 use crate::entity::ai::goal::revenge::RevengeGoal;
 use crate::entity::ai::pathfinder::node::PathType;
 use crate::entity::ai::target_match::TargetMatch;
+use crate::entity::ai::util::RandomExt;
 use crate::entity::{
     Entity, EntityBase,
     ai::goal::{
@@ -23,6 +26,9 @@ const BLAZE_HUNTS: &[Hunt] = &[Hunt::new(2, TargetMatch::Type(&EntityType::PLAYE
 pub struct BlazeEntity {
     pub entity: Arc<MobEntity>,
     pub is_charged: AtomicBool,
+    /// How far above the blaze's eyes the target may be before it rises toward it.
+    allowed_height_offset: AtomicCell<f32>,
+    next_height_offset_change_tick: AtomicI32,
 }
 
 impl BlazeEntity {
@@ -31,6 +37,8 @@ impl BlazeEntity {
         let blaze = Self {
             entity,
             is_charged: AtomicBool::new(false),
+            allowed_height_offset: AtomicCell::new(0.5),
+            next_height_offset_change_tick: AtomicI32::new(0),
         };
         let mob_arc = Arc::new(blaze);
         let mob_weak: Weak<dyn Mob> = {
@@ -113,6 +121,37 @@ impl Mob for BlazeEntity {
 
         if base_entity.touching_water.load(Ordering::Relaxed) {
             caller.damage(caller, 1.0, DamageType::DROWN);
+        }
+    }
+
+    /// Vanilla `customServerAiStep`: rise toward a target that is too far above.
+    fn custom_server_ai_step(&self, _caller: &dyn EntityBase) {
+        if self
+            .next_height_offset_change_tick
+            .fetch_sub(1, Ordering::Relaxed)
+            <= 1
+        {
+            self.next_height_offset_change_tick
+                .store(100, Ordering::Relaxed);
+            self.allowed_height_offset
+                .store(self.get_random().triangle(0.5, 6.891) as f32);
+        }
+
+        let Some(target) = self.entity.get_target() else {
+            return;
+        };
+        let entity = &self.entity.living_entity.entity;
+        if target.get_entity().get_eye_y()
+            > entity.get_eye_y() + f64::from(self.allowed_height_offset.load())
+            && self.can_attack(target.as_ref())
+        {
+            let velocity = entity.velocity.load();
+            entity.velocity.store(Vector3::new(
+                velocity.x,
+                velocity.y + (f64::from(0.3f32) - velocity.y) * f64::from(0.3f32),
+                velocity.z,
+            ));
+            entity.velocity_dirty.store(true, Ordering::Relaxed);
         }
     }
 }
