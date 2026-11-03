@@ -1,6 +1,8 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
+use pumpkin_data::attributes::Attributes;
+use pumpkin_data::damage::DamageType;
 use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::fluid::Fluid;
@@ -15,6 +17,7 @@ use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 
 use crate::block::PathComputationType;
+use crate::entity::attributes::{Modifier, ModifierOperation, send_attribute_updates_for_living};
 use crate::entity::{
     Entity, EntityBase,
     ageable::{AgeableData, AgeableMob},
@@ -38,6 +41,8 @@ use crate::entity::{
 
 const TEMPT_ITEMS: &[&Item] = &[&Item::WARPED_FUNGUS, &Item::WARPED_FUNGUS_ON_A_STICK];
 
+const SUFFOCATING_MODIFIER_ID: &str = "minecraft:suffocating";
+const SUFFOCATING_MODIFIER_AMOUNT: f32 = -0.34;
 /// Vanilla `Strider.getLiquidCollisionShape`: `Block.column(16.0, 0.0, 8.0)`.
 const LIQUID_COLLISION_SHAPE: BoundingBox = BoundingBox {
     min: Vector3::new(0.0, 0.0, 0.0),
@@ -107,12 +112,50 @@ impl StriderEntity {
     }
 
     pub fn set_suffocating(&self, suffocating: bool) {
-        self.suffocating.store(suffocating, Ordering::Relaxed);
+        // Vanilla only resyncs the flag and the speed modifier when they change.
+        if self.suffocating.swap(suffocating, Ordering::Relaxed) == suffocating {
+            return;
+        }
         let entity = self.get_entity();
         entity.set_synced_data(
             pumpkin_data::tracked_data::strider::DATA_SUFFOCATING,
             suffocating,
         );
+        let living = &self.mob_entity.living_entity;
+        living.update_attribute(&Attributes::MOVEMENT_SPEED, |inst| {
+            if suffocating {
+                inst.add_or_replace_modifier(Modifier {
+                    id: SUFFOCATING_MODIFIER_ID.to_string(),
+                    amount: f64::from(SUFFOCATING_MODIFIER_AMOUNT),
+                    operation: ModifierOperation::MultiplyBase,
+                });
+            } else {
+                inst.remove_modifier(SUFFOCATING_MODIFIER_ID);
+            }
+        });
+        send_attribute_updates_for_living(living, vec![Attributes::MOVEMENT_SPEED]);
+    }
+
+    /// The suffocation half of vanilla `Strider.tick`: cold away from warm blocks and lava,
+    /// unless it rides a strider that is warm.
+    fn update_suffocating(&self) {
+        if self.mob_entity.is_no_ai() {
+            return;
+        }
+        let entity = self.get_entity();
+        let world = entity.world.load();
+        let block_inside = world.get_block(&entity.block_pos.load());
+        let block_on = world.get_block(&entity.get_pos_with_y_offset(f64::from(0.2f32)).0);
+        let in_warm_blocks = block_inside.has_tag(&tag::Block::MINECRAFT_STRIDER_WARM_BLOCKS)
+            || block_on.has_tag(&tag::Block::MINECRAFT_STRIDER_WARM_BLOCKS)
+            || entity.lava_height.load() > 0.0;
+        let on_warm_strider = entity.get_vehicle().is_some_and(|vehicle| {
+            vehicle
+                .cast_any()
+                .downcast_ref::<Self>()
+                .is_some_and(|strider| !strider.is_suffocating())
+        });
+        self.set_suffocating(!in_warm_blocks && !on_warm_strider);
     }
 
     /// Vanilla `Strider.floatStrider`: stand on the lava surface, or bob up toward it.
@@ -230,6 +273,14 @@ impl Animal for StriderEntity {
 }
 
 impl Mob for StriderEntity {
+    fn mob_tick(&self, caller: &dyn EntityBase) {
+        self.update_suffocating();
+        // Vanilla `isSensitiveToWater`.
+        if self.get_entity().is_in_water_or_rain() {
+            caller.damage(caller, 1.0, DamageType::DROWN);
+        }
+    }
+
     fn post_tick(&self) {
         self.float_strider();
     }
