@@ -119,7 +119,8 @@ impl Mob for BlazeEntity {
                 .store(Vector3::new(vel.x, vel.y * 0.6, vel.z));
         }
 
-        if base_entity.touching_water.load(Ordering::Relaxed) {
+        // Vanilla `isSensitiveToWater`.
+        if base_entity.is_in_water_or_rain() {
             caller.damage(caller, 1.0, DamageType::DROWN);
         }
     }
