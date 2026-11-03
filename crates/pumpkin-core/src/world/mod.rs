@@ -2468,6 +2468,14 @@ impl World {
                         collisions.push(shape);
                     }
                 }
+            } else if block == &Block::WATER || block == &Block::LAVA {
+                if let Some(shape) =
+                    crate::block::fluid::collision_shape_for_entity(self, entity, &pos, state.id)
+                    && shape.intersects(&bounding_box)
+                {
+                    collided = true;
+                    collisions.push(shape);
+                }
             } else {
                 for shape in state.get_block_collision_shapes_at(&pos) {
                     let shape = shape.at_pos(pos);

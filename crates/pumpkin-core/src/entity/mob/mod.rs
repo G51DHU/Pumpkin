@@ -1815,6 +1815,17 @@ pub trait Mob: EntityBase + Send + Sync {
         true
     }
 
+    /// Vanilla `LivingEntity.canStandOnFluid`.
+    fn can_stand_on_fluid(&self, _fluid: &pumpkin_data::fluid::Fluid) -> bool {
+        false
+    }
+
+    /// Vanilla `LivingEntity.getLiquidCollisionShape`, relative to the fluid block.
+    /// `None` is vanilla's empty shape.
+    fn get_liquid_collision_shape(&self) -> Option<BoundingBox> {
+        None
+    }
+
     fn on_removed(&self) {}
 
     fn get_preferred_weapon_type(&self) -> Option<&'static pumpkin_data::tag::Tag> {

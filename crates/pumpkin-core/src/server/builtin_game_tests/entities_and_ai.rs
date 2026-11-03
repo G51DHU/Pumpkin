@@ -34,6 +34,49 @@ pub(super) async fn test_item_entities_merge(helper: GameTestHelper) -> GameTest
     Ok(())
 }
 
+/// How many striders touch the given block layer of the test area.
+async fn striders_in_layer(helper: &GameTestHelper, y: i32) -> u32 {
+    helper
+        .execute_command(
+            &BlockPos::new(0, y, 0),
+            "execute if entity @e[type=minecraft:strider,dx=4,dy=0,dz=4]",
+        )
+        .await
+        .unwrap_or(0)
+}
+
+/// A strider dropped into a two-deep lava pool stands on its surface.
+pub(super) async fn test_strider_stands_on_lava(helper: GameTestHelper) -> GameTestResult<()> {
+    build_stone_floor(&helper, 5, 5).await?;
+    for y in 1..=2 {
+        for x in 0..5 {
+            for z in 0..5 {
+                helper
+                    .set_block_default(&BlockPos::new(x, y, z), &Block::LAVA)
+                    .await?;
+            }
+        }
+    }
+    helper
+        .spawn_entity_at("minecraft:strider", Vector3::new(2.5, 4.0, 2.5))
+        .await?;
+
+    helper
+        .start_sequence()
+        .then_idle(60)
+        .then_execute(|helper| async move {
+            // Standing on the top source block puts its feet at y 2.5.
+            let on_surface = striders_in_layer(&helper, 2).await;
+            let sunk = striders_in_layer(&helper, 1).await;
+            helper.assert_true(
+                on_surface == 1 && sunk == 0,
+                format!("the strider is not on the lava surface ({on_surface} at the surface, {sunk} sunk)"),
+            )
+        })
+        .then_succeed();
+    Ok(())
+}
+
 pub(super) async fn test_zombie_pathfinds_to_villager(
     helper: GameTestHelper,
 ) -> GameTestResult<()> {

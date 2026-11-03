@@ -16,10 +16,37 @@ use crate::entity::{EntityBase, player::Player};
 use crate::{server::Server, world::World};
 use pumpkin_data::BlockDirection;
 use pumpkin_data::BlockStateId;
+use pumpkin_data::block_properties::WaterLikeProperties;
 use pumpkin_data::{fluid::Fluid, item::Item};
 use pumpkin_protocol::java::server::play::SUseItemOn;
+use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
 use std::sync::Arc;
+
+/// Vanilla `LiquidBlock.getCollisionShape` for an entity: a source block holds up a mob that
+/// can stand on its fluid while the mob is above the mob's liquid shape.
+pub(crate) fn collision_shape_for_entity(
+    world: &World,
+    entity: &dyn EntityBase,
+    position: &BlockPos,
+    state_id: BlockStateId,
+) -> Option<BoundingBox> {
+    if WaterLikeProperties::from_state_id(state_id).level != 0 {
+        return None;
+    }
+    let mob = entity.get_mob()?;
+    let shape = mob.get_liquid_collision_shape()?;
+    // Vanilla `EntityCollisionContext.isAbove`.
+    let entity_bottom = entity.get_entity().pos.load().y;
+    if entity_bottom <= f64::from(position.0.y) + shape.max.y - f64::from(1.0e-5f32) {
+        return None;
+    }
+    // Vanilla `EntityCollisionContext.canStandOnFluid`.
+    let fluid = World::get_fluid_from_state_id(state_id);
+    let fluid_above = world.get_fluid(&position.up());
+    (mob.can_stand_on_fluid(fluid) && !fluid_above.matches_type(fluid))
+        .then(|| shape.at_pos(*position))
+}
 
 pub trait FluidBehaviour: Send + Sync {
     fn normal_use(

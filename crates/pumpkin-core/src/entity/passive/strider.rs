@@ -4,20 +4,23 @@ use std::sync::{Arc, Weak};
 use pumpkin_data::BlockState;
 use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::entity::EntityType;
+use pumpkin_data::fluid::Fluid;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_nbt::compound::NbtCompound;
+use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
+use pumpkin_util::math::vector3::Vector3;
 
 use crate::entity::{
     Entity, EntityBase,
     ageable::{AgeableData, AgeableMob},
     ai::goal::{
         breed::BreedGoal, escape_danger::EscapeDangerGoal, follow_parent::FollowParentGoal,
-        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, swim::SwimGoal,
-        tempt::TemptGoal, wander_around::WanderAroundGoal,
+        look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal, tempt::TemptGoal,
+        wander_around::WanderAroundGoal,
     },
     item_steerable::{ItemBasedSteering, ItemSteerable},
     mob::{Mob, MobEntity, equipment::equip_on_target},
@@ -26,6 +29,12 @@ use crate::entity::{
 };
 
 const TEMPT_ITEMS: &[&Item] = &[&Item::WARPED_FUNGUS, &Item::WARPED_FUNGUS_ON_A_STICK];
+
+/// Vanilla `Strider.getLiquidCollisionShape`: `Block.column(16.0, 0.0, 8.0)`.
+const LIQUID_COLLISION_SHAPE: BoundingBox = BoundingBox {
+    min: Vector3::new(0.0, 0.0, 0.0),
+    max: Vector3::new(1.0, 0.5, 1.0),
+};
 
 pub struct StriderEntity {
     pub mob_entity: MobEntity,
@@ -52,7 +61,6 @@ impl StriderEntity {
         {
             let goal_selector = &mob_arc.mob_entity.goals_selector;
 
-            goal_selector.add_goal(0, Box::new(SwimGoal::default()));
             goal_selector.add_goal(1, EscapeDangerGoal::new(1.65));
             goal_selector.add_goal(2, BreedGoal::new(1.0));
             goal_selector.add_goal(3, Box::new(TemptGoal::new(1.4, TEMPT_ITEMS, false)));
@@ -81,6 +89,33 @@ impl StriderEntity {
             suffocating,
         );
     }
+
+    /// Vanilla `Strider.floatStrider`: stand on the lava surface, or bob up toward it.
+    fn float_strider(&self) {
+        let entity = self.get_entity();
+        if !entity.touching_lava.load(Ordering::Relaxed) {
+            return;
+        }
+        let block_pos = entity.block_pos.load();
+        let world = entity.world.load();
+        let above_lava_shape = entity.pos.load().y
+            > f64::from(block_pos.0.y) + LIQUID_COLLISION_SHAPE.max.y - f64::from(1.0e-5f32);
+        if above_lava_shape
+            && !world
+                .get_fluid(&block_pos.up())
+                .has_tag(&tag::Fluid::MINECRAFT_LAVA)
+        {
+            entity.on_ground.store(true, Ordering::Relaxed);
+        } else {
+            entity
+                .velocity
+                .store(entity.velocity.load() * 0.5 + Vector3::new(0.0, 0.05, 0.0));
+        }
+    }
+}
+
+fn is_in_lava(mob: &dyn Mob) -> bool {
+    mob.get_entity().touching_lava.load(Ordering::Relaxed)
 }
 
 impl AgeableMob for StriderEntity {
@@ -101,6 +136,27 @@ impl Animal for StriderEntity {
 }
 
 impl Mob for StriderEntity {
+    fn post_tick(&self) {
+        self.float_strider();
+    }
+
+    fn can_stand_on_fluid(&self, fluid: &Fluid) -> bool {
+        fluid.has_tag(&tag::Fluid::MINECRAFT_LAVA)
+    }
+
+    fn get_liquid_collision_shape(&self) -> Option<BoundingBox> {
+        Some(LIQUID_COLLISION_SHAPE)
+    }
+
+    /// Vanilla `checkFallDamage`: lava clears the fall instead of landing on it.
+    fn should_check_fall_damage(&self) -> bool {
+        if is_in_lava(self) {
+            self.mob_entity.living_entity.fall_distance.store(0.0);
+            return false;
+        }
+        true
+    }
+
     fn can_dispenser_equip_into_slot(&self, slot: &EquipmentSlot) -> bool {
         *slot == EquipmentSlot::SADDLE || self.mob_entity.can_pick_up_loot()
     }
